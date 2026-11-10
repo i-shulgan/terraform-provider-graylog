@@ -2,7 +2,7 @@
 
 This fork adds hot-only Data Tiering support tested against Graylog 7.2.2. The upstream contribution is tracked in [PR #41](https://github.com/Ultrafenrir/terraform-provider-graylog/pull/41).
 
-Fork release: `0.5.9-tiering.1`. Warm tier configuration is not supported.
+Fork release: `0.5.9-tiering.2`. Warm tier configuration is not supported.
 
 [![Terraform Registry](https://img.shields.io/badge/terraform-registry-blue)](https://registry.terraform.io/providers/Ultrafenrir/graylog)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Ultrafenrir/terraform-provider-graylog)](https://github.com/Ultrafenrir/terraform-provider-graylog)
@@ -30,7 +30,7 @@ terraform {
   required_providers {
     graylog = {
       source  = "i-shulgan/graylog"
-      version = "= 0.5.9-tiering.1"
+      version = "= 0.5.9-tiering.2"
     }
   }
 }
@@ -83,7 +83,7 @@ terraform {
   required_providers {
     graylog = {
       source  = "i-shulgan/graylog"
-      version = "= 0.5.9-tiering.1"
+      version = "= 0.5.9-tiering.2"
     }
   }
 }

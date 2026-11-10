@@ -10,77 +10,41 @@ permissions:
 
 jobs:
   integration-test:
-    name: Integration tests (Graylog 5.x/6.x/7.x)
+    name: Index set acceptance (Graylog 7.2.2)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: compose/data-tiering.yml
+      COMPOSE_PROJECT_NAME: release-tiering
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          cache: true
-          check-latest: true
-      - name: Setup Terraform CLI
-        uses: hashicorp/setup-terraform@v3.1.2
+      - uses: hashicorp/setup-terraform@v3.1.2
         with:
           terraform_version: 1.6.6
           terraform_wrapper: false
-      - name: Setup Docker Buildx (for completeness)
-        uses: docker/setup-buildx-action@v3
-
-      # Принудительная очистка возможного «битого» кэша/слоёв на раннере
-      - name: Pre-clean Go caches (best-effort)
-        run: |
-          set -euo pipefail
-          go env GOMODCACHE GOCACHE || true
-          rm -rf "$HOME/go/pkg/mod" || true
-          rm -rf "$HOME/.cache/go-build" || true
-        continue-on-error: true
-
-      - name: Ensure clean docker compose state
-        run: |
-          docker compose down -v || true
-
       - name: Unit tests and vet
         run: |
           go test -short ./...
           go vet ./...
-
-      - name: Run all integration tests (docker compose)
+      - name: Start Graylog 7.2.2
+        run: docker compose up -d --wait --wait-timeout 600
+      - name: Index set acceptance tests
         env:
-          # Defaults used by Makefile and tests
-          URL: http://127.0.0.1:9000/api
-          TOKEN: ${{ secrets.GRAYLOG_TOKEN_BASE64 }}
+          URL: http://127.0.0.1:19072/api
+          TOKEN: YWRtaW46YWRtaW4=
+          TF_ACC: '1'
         run: |
-          set -euo pipefail
-          echo "Go env (cache paths):"
-          go env GOMODCACHE GOCACHE
-          # If no token provided, fall back to default admin:admin used by tests
-          if [ -z "${TOKEN:-}" ]; then
-            TOKEN=$(printf 'admin:admin' | base64)
-            export TOKEN
-          fi
-          make test-acc-all
-          make test-acc-one GRAYLOG_VERSION=7.2.2 OPENSEARCH_TAG=2.19.4
-
-      - name: Upload docker logs on failure
+          export TF_ACC_TERRAFORM_PATH="$(command -v terraform)"
+          go test -v -tags=acceptance -run '^TestAccIndexSet_' -timeout 15m ./internal/provider
+      - name: Docker logs
         if: failure()
-        run: |
-          docker compose logs > docker-compose-logs.txt || true
-          # ensure file exists for artifact upload
-          [ -f docker-compose-logs.txt ] || touch docker-compose-logs.txt
-        continue-on-error: true
-
-      - name: Archive docker logs
+        run: docker compose logs --no-color
+      - name: Stop test stack
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-compose-logs
-          path: docker-compose-logs.txt
-          if-no-files-found: ignore
+        run: docker compose down -v
 
   build-artifacts:
     name: Build artifacts (matrix)
