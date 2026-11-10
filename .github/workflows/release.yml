@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
   integration-test:
     name: Integration tests (Graylog 5.x/6.x/7.x)
@@ -17,7 +20,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version-file: go.mod
           cache: true
           check-latest: true
       - name: Setup Terraform CLI
@@ -41,6 +44,11 @@ jobs:
         run: |
           docker compose down -v || true
 
+      - name: Unit tests and vet
+        run: |
+          go test -short ./...
+          go vet ./...
+
       - name: Run all integration tests (docker compose)
         env:
           # Defaults used by Makefile and tests
@@ -56,6 +64,7 @@ jobs:
             export TOKEN
           fi
           make test-acc-all
+          make test-acc-one GRAYLOG_VERSION=7.2.2 OPENSEARCH_TAG=2.19.4
 
       - name: Upload docker logs on failure
         if: failure()
@@ -76,7 +85,7 @@ jobs:
   build-artifacts:
     name: Build artifacts (matrix)
     runs-on: ubuntu-latest
-    needs: [integration-test, acceptance-test]
+    needs: [integration-test]
     strategy:
       matrix:
         goos: [linux, darwin]
@@ -88,7 +97,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          go-version-file: go.mod
           cache: false
 
       - name: Build and zip
@@ -105,7 +114,7 @@ jobs:
           OUT="dist/${BIN_IN_ZIP}"
           echo "Building $OUT for ${GOOS}/${GOARCH}"
           # Статическая сборка для совместимости с Alpine/musl
-          CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "-s -w -extldflags '-static'" -o "$OUT"
+          CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags "-s -w -X main.version=${VERSION} -extldflags '-static'" -o "$OUT"
           # Упаковываем в архив с ОС/арх в имени
           (cd dist && zip "${BIN}_${VERSION}_${GOOS}_${GOARCH}.zip" "${BIN_IN_ZIP}")
 
@@ -118,7 +127,7 @@ jobs:
   publish-release:
     name: Sign and publish release
     runs-on: ubuntu-latest
-    needs: [integration-test, acceptance-test, build-artifacts]
+    needs: [integration-test, build-artifacts]
     permissions:
       contents: write
     steps:
@@ -155,10 +164,12 @@ jobs:
           fi
           VERSION="${GITHUB_REF_NAME#v}"
           SUMS_FILE="terraform-provider-graylog_${VERSION}_SHA256SUMS"
-          sha256sum *.zip > "${SUMS_FILE}"
+          printf '{"version":1,"metadata":{"protocol_versions":["6.0"]}}\n' > "terraform-provider-graylog_${VERSION}_manifest.json"
+          sha256sum *.zip *_manifest.json > "${SUMS_FILE}"
           echo "Generated ${SUMS_FILE}:" && cat "${SUMS_FILE}"
 
       - name: Import GPG key
+        id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -172,9 +183,9 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           SUMS_FILE="terraform-provider-graylog_${VERSION}_SHA256SUMS"
           # Terraform Registry требует бинарную отсоединённую подпись (не ASCII-armor)
-          gpg --batch --yes --detach-sign --output "${SUMS_FILE}.sig" "${SUMS_FILE}"
-          # Опциональная самопроверка подписи
-          gpg --verify "${SUMS_FILE}.sig" "${SUMS_FILE}" || true
+          gpg --batch --yes --local-user "${{ steps.import_gpg.outputs.fingerprint }}" --detach-sign --output "${SUMS_FILE}.sig" "${SUMS_FILE}"
+          # Verify the signature before publishing
+          gpg --verify "${SUMS_FILE}.sig" "${SUMS_FILE}"
           echo "Signature created: ${SUMS_FILE}.sig"
 
       - name: Create GitHub Release (single upload)
@@ -182,63 +193,10 @@ jobs:
         with:
           files: |
             dist/*.zip
+            dist/*_manifest.json
             dist/terraform-provider-graylog_*_SHA256SUMS
             dist/terraform-provider-graylog_*_SHA256SUMS.sig
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  acceptance-test:
-    name: Acceptance tests (TF_ACC)
-    runs-on: ubuntu-latest
-    needs: [integration-test]
-    timeout-minutes: 120
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22.x'
-          cache: false
-
-      - name: Setup Terraform CLI
-        uses: hashicorp/setup-terraform@v3.1.2
-        with:
-          terraform_version: 1.6.6
-          terraform_wrapper: false
-
-      - name: Ensure clean docker compose state
-        run: |
-          docker compose down -v || true
-
-      - name: Run acceptance tests (all Graylog versions)
-        env:
-          URL: http://127.0.0.1:9000/api
-          TOKEN: ${{ secrets.GRAYLOG_TOKEN_BASE64 }}
-        run: |
-          set -euo pipefail
-          echo "TF version: $(terraform version | head -n1)"
-          export TF_ACC_TERRAFORM_PATH="$(command -v terraform)"
-          if [ -z "${TOKEN:-}" ]; then
-            TOKEN=$(printf 'admin:admin' | base64)
-            export TOKEN
-          fi
-          make test-acc-all
-
-      - name: Upload docker logs on failure
-        if: failure()
-        run: |
-          docker compose logs > docker-compose-logs.txt || true
-          [ -f docker-compose-logs.txt ] || touch docker-compose-logs.txt
-        continue-on-error: true
-
-      - name: Archive docker logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-compose-logs-acceptance
-          path: docker-compose-logs.txt
-          if-no-files-found: ignore

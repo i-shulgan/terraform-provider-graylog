@@ -11,15 +11,15 @@ import (
 
 var (
 	// Set by goreleaser or ldflags at build time if needed
-	version = "0.3.4"
+	version = "dev"
 )
 
 func main() {
 	if err := providerserver.Serve(
 		context.Background(),
-		graylog.New,
+		graylog.NewWithVersion(version),
 		providerserver.ServeOpts{
-			Address: "registry.terraform.io/ultrafenrir/graylog",
+			Address: "registry.terraform.io/i-shulgan/graylog",
 			Debug:   false,
 			// ProtocolVersions: []int{6}, // framework will negotiate by default
 		},

@@ -1,6 +1,8 @@
-# Graylog Terraform Provider
+# Graylog Terraform Provider — i-shulgan fork
 
-**Production-ready Terraform provider for Graylog OSS** — automate log management infrastructure with unique features not available in other providers.
+This fork adds hot-only Data Tiering support tested against Graylog 7.2.2. The upstream contribution is tracked in [PR #41](https://github.com/Ultrafenrir/terraform-provider-graylog/pull/41).
+
+Fork release: `0.5.9-tiering.1`. Warm tier configuration is not supported.
 
 [![Terraform Registry](https://img.shields.io/badge/terraform-registry-blue)](https://registry.terraform.io/providers/Ultrafenrir/graylog)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Ultrafenrir/terraform-provider-graylog)](https://github.com/Ultrafenrir/terraform-provider-graylog)
@@ -27,8 +29,8 @@ Add the provider requirement (namespace is based on the GitHub org):
 terraform {
   required_providers {
     graylog = {
-      source  = "Ultrafenrir/graylog"
-      version = "~> 0.3"
+      source  = "i-shulgan/graylog"
+      version = "= 0.5.9-tiering.1"
     }
   }
 }
@@ -80,8 +82,8 @@ the MPL, while the provider may be combined with code under other licenses.
 terraform {
   required_providers {
     graylog = {
-      source  = "Ultrafenrir/graylog"
-      version = "~> 0.3"
+      source  = "i-shulgan/graylog"
+      version = "= 0.5.9-tiering.1"
     }
   }
 }

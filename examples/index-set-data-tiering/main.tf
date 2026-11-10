@@ -1,7 +1,8 @@
 terraform {
   required_providers {
     graylog = {
-      source = "Ultrafenrir/graylog"
+      source  = "i-shulgan/graylog"
+      version = "= 0.5.9-tiering.1"
       # Requires a release containing index-set Data Tiering support.
     }
   }

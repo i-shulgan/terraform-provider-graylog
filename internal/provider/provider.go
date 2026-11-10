@@ -15,7 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-type graylogProvider struct{}
+type graylogProvider struct{ version string }
 
 type graylogProviderModel struct {
 	URL types.String `tfsdk:"url"`
@@ -45,6 +45,7 @@ type graylogProviderModel struct {
 
 func (p *graylogProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "graylog"
+	resp.Version = p.version
 }
 
 func (p *graylogProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
@@ -208,7 +209,11 @@ func (p *graylogProvider) DataSources(_ context.Context) []func() datasource.Dat
 	}
 }
 
-func New() provider.Provider { return &graylogProvider{} }
+func New() provider.Provider { return &graylogProvider{version: "dev"} }
+
+func NewWithVersion(version string) func() provider.Provider {
+	return func() provider.Provider { return &graylogProvider{version: version} }
+}
 
 // ===== Вспомогательные функции/типы =====
 
