@@ -113,7 +113,7 @@ func TestIndexSet_LegacyCompatibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, body := range bodies {
-		for _, key := range []string{"data_tiering", "use_legacy_rotation"} {
+		for _, key := range []string{"data_tiering", "use_legacy_rotation", "field_type_profile"} {
 			if _, present := body[key]; present {
 				t.Fatalf("legacy request includes %s: %#v", key, body)
 			}

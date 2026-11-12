@@ -164,6 +164,7 @@ func (p *graylogProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewStreamResource,
 		NewInputResource,
 		NewIndexSetResource,
+		NewIndexSetFieldTypeProfileResource,
 		NewPipelineResource,
 		NewPipelineRuleResource,
 		NewPipelineConnectionResource,

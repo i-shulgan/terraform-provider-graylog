@@ -41,6 +41,7 @@ type indexSetModel struct {
 	Retention         *strategyModel `tfsdk:"retention"`
 	DataTiering       types.String   `tfsdk:"data_tiering"`
 	UseLegacyRotation types.Bool     `tfsdk:"use_legacy_rotation"`
+	FieldTypeProfile  types.String   `tfsdk:"field_type_profile"`
 	Default           types.Bool     `tfsdk:"default"`
 	Timeouts          timeouts.Value `tfsdk:"timeouts"`
 }
@@ -152,6 +153,11 @@ func (r *indexSetResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.UseStateForUnknown(),
 				},
+			},
+			"field_type_profile": schema.StringAttribute{
+				Optional:    true,
+				Description: "Field type profile ID. Omit to preserve the server binding; set an empty string to detach. Changes apply to future indices; the provider does not rotate existing indices.",
+				Validators:  []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^([0-9a-fA-F]{24})?$`), "must be a 24-character Mongo ObjectID or an empty string to detach")},
 			},
 			"data_tiering": schema.StringAttribute{
 				Optional:    true,
@@ -310,6 +316,7 @@ func (r *indexSetResource) Create(ctx context.Context, req resource.CreateReques
 		RetentionStrategyConfig:         mapFromStringMap(ctx, data.Retention),
 		DataTiering:                     indexSetTieringJSON(data.DataTiering),
 		UseLegacyRotation:               indexSetLegacyRotation(data.UseLegacyRotation),
+		FieldTypeProfile:                indexSetProfileBinding(data.FieldTypeProfile),
 		Default:                         data.Default.ValueBool(),
 	})
 	if err != nil {
@@ -491,6 +498,7 @@ func (r *indexSetResource) Update(ctx context.Context, req resource.UpdateReques
 		RetentionStrategyConfig:         mapFromStringMap(ctx, plan.Retention),
 		DataTiering:                     indexSetTieringJSON(plan.DataTiering),
 		UseLegacyRotation:               indexSetLegacyRotation(plan.UseLegacyRotation),
+		FieldTypeProfile:                indexSetProfileBinding(plan.FieldTypeProfile),
 		Default:                         plan.Default.ValueBool(),
 	})
 	if err != nil {
@@ -598,6 +606,10 @@ func (r *indexSetResource) ImportState(ctx context.Context, req resource.ImportS
 		// Terraform strategies that can be configured alongside data_tiering.
 		data.Rotation = nil
 		data.Retention = nil
+	}
+
+	if is.FieldTypeProfile != nil {
+		data.FieldTypeProfile = types.StringValue(*is.FieldTypeProfile)
 	}
 
 	// Import materializes legacy strategy blocks only when tiering is inactive.
@@ -724,6 +736,23 @@ func applyIndexSetReadState(ctx context.Context, data *indexSetModel, is *client
 		}
 	}
 	data.Default = types.BoolValue(is.Default)
+	// An omitted binding is unmanaged. Managed bindings must track both switches
+	// and external detachments so refresh can detect drift.
+	if !data.FieldTypeProfile.IsNull() {
+		profile := ""
+		if is.FieldTypeProfile != nil {
+			profile = *is.FieldTypeProfile
+		}
+		data.FieldTypeProfile = types.StringValue(profile)
+	}
+}
+
+func indexSetProfileBinding(value types.String) *string {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	profile := value.ValueString()
+	return &profile
 }
 
 // validateIndexSet performs basic checks for key fields.

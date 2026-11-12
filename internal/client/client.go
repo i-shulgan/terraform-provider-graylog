@@ -1717,11 +1717,13 @@ type IndexSet struct {
 	RetentionStrategyConfig map[string]any `json:"retention_strategy,omitempty"`
 	// Preserve the complete polymorphic document on read-modify-write updates,
 	// including tier types this provider does not expose for configuration.
-	DataTiering              json.RawMessage `json:"data_tiering,omitempty"`
-	UseLegacyRotation        *bool           `json:"use_legacy_rotation,omitempty"`
-	IndexAnalyzer            string          `json:"index_analyzer,omitempty"`
-	FieldTypeRefreshInterval int             `json:"field_type_refresh_interval,omitempty"`
-	Default                  bool            `json:"default,omitempty"`
+	DataTiering       json.RawMessage `json:"data_tiering,omitempty"`
+	UseLegacyRotation *bool           `json:"use_legacy_rotation,omitempty"`
+	// nil means preserve on update; a pointer to "" explicitly detaches the profile.
+	FieldTypeProfile         *string `json:"field_type_profile,omitempty"`
+	IndexAnalyzer            string  `json:"index_analyzer,omitempty"`
+	FieldTypeRefreshInterval int     `json:"field_type_refresh_interval,omitempty"`
+	Default                  bool    `json:"default,omitempty"`
 	// Optimization-related settings required by Graylog 7.x
 	IndexOptimizationMaxNumSegments int  `json:"index_optimization_max_num_segments,omitempty"`
 	IndexOptimizationDisabled       bool `json:"index_optimization_disabled"` // Required by Graylog 7.x, removed omitempty
@@ -1764,6 +1766,9 @@ func (is *IndexSet) HasDataTiering() bool {
 }
 
 func (c *Client) CreateIndexSet(is *IndexSet) (*IndexSet, error) {
+	if c.APIVersion == APIV5 && is.FieldTypeProfile != nil {
+		return nil, fmt.Errorf("index set field type profiles require Graylog 6 or later")
+	}
 	if c.APIVersion == APIV5 && (is.HasDataTiering() || is.UseLegacyRotation != nil) {
 		return nil, fmt.Errorf("index set data tiering requires Graylog 6 or later")
 	}
@@ -1949,6 +1954,9 @@ func (c *Client) CreateIndexSet(is *IndexSet) (*IndexSet, error) {
 	if is.UseLegacyRotation != nil {
 		body.(map[string]any)["use_legacy_rotation"] = *is.UseLegacyRotation
 	}
+	if is.FieldTypeProfile != nil && *is.FieldTypeProfile != "" {
+		body.(map[string]any)["field_type_profile"] = *is.FieldTypeProfile
+	}
 	resp, err := c.doRequest("POST", path, body)
 	if err != nil {
 		return nil, err
@@ -2040,6 +2048,9 @@ func (c *Client) WaitForIndexSetReady(id string, interval time.Duration) error {
 }
 
 func (c *Client) UpdateIndexSet(id string, is *IndexSet) (*IndexSet, error) {
+	if c.APIVersion == APIV5 && is.FieldTypeProfile != nil {
+		return nil, fmt.Errorf("index set field type profiles require Graylog 6 or later")
+	}
 	if c.APIVersion == APIV5 && (is.HasDataTiering() || is.UseLegacyRotation != nil) {
 		return nil, fmt.Errorf("index set data tiering requires Graylog 6 or later")
 	}
@@ -2080,6 +2091,10 @@ func (c *Client) UpdateIndexSet(id string, is *IndexSet) (*IndexSet, error) {
 		// legacy rotation and remove the existing tiering configuration.
 		useLegacy := false
 		current.UseLegacyRotation = &useLegacy
+	}
+
+	if is.FieldTypeProfile != nil {
+		current.FieldTypeProfile = is.FieldTypeProfile
 	}
 
 	// Обновляем стратегии если они заданы
@@ -2156,7 +2171,20 @@ func (c *Client) UpdateIndexSet(id string, is *IndexSet) (*IndexSet, error) {
 
 	// Формируем полное тело запроса со всеми полями
 	// Важно: используем текущий объект целиком для PUT
-	resp, err := c.doRequest("PUT", path, current)
+	var body any = current
+	if current.FieldTypeProfile != nil && *current.FieldTypeProfile == "" {
+		raw, err := json.Marshal(current)
+		if err != nil {
+			return nil, err
+		}
+		var document map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &document); err != nil {
+			return nil, err
+		}
+		document["field_type_profile"] = json.RawMessage("null")
+		body = document
+	}
+	resp, err := c.doRequest("PUT", path, body)
 	if err != nil {
 		return nil, err
 	}
